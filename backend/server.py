@@ -183,13 +183,17 @@ class Product(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     manufacturer_id: str
     name: str
+    category: str  # New: Product category for matching
     description: str
+    material: str  # New: Material for matching
     specifications: str
     quantity: int
     quality: str
     certifications: List[str]
-    packaging: str
+    packaging: str  # New: Packaging capability
     production_capacity: str
+    export_experience: bool = True  # New: Export experience
+    supported_incoterms: List[str] = []  # New: FOB, CIF, CNF, etc.
     export_countries: List[str]
     moq: int
     images: List[str] = []
@@ -200,6 +204,8 @@ class Requirement(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     importer_id: str
+    category: str  # New: Product category for matching
+    material: Optional[str] = None  # New: Material preference for matching
     hsn_code: str
     quantity: int
     quality_requirements: str
@@ -238,6 +244,90 @@ class Order(BaseModel):
     vessel_mmsi: Optional[int] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MatchIndicator(BaseModel):
+    category_match: bool
+    material_match: bool
+    certification_match: bool
+    moq_match: bool
+    capacity_match: bool
+    incoterm_match: bool
+    match_score: int  # 0-100
+
+
+class MatchedRequirement(BaseModel):
+    requirement: Requirement
+    match_indicator: MatchIndicator
+
+
+# ========== MATCHING LOGIC ==========
+def calculate_match(product: dict, requirement: dict) -> MatchIndicator:
+    """
+    Calculate match score between a manufacturer's product and an importer's requirement
+    """
+    # Category match (mandatory)
+    category_match = product.get('category', '').lower() == requirement.get('category', '').lower()
+    
+    # Material match (if specified in requirement)
+    material_match = True
+    if requirement.get('material'):
+        material_match = product.get('material', '').lower() == requirement.get('material', '').lower()
+    
+    # Certification match (if specified)
+    certification_match = True
+    req_certs = requirement.get('certification_requirements', '').lower()
+    if req_certs and req_certs != 'none' and req_certs != 'not required':
+        product_certs = [c.lower() for c in product.get('certifications', [])]
+        # Check if any required certification is in product certifications
+        certification_match = any(cert in ' '.join(product_certs) for cert in req_certs.split(','))
+    
+    # MOQ match (product MOQ should be <= requirement quantity)
+    moq_match = product.get('moq', 0) <= requirement.get('quantity', 0)
+    
+    # Capacity match (rough estimation - production capacity vs order quantity)
+    capacity_match = True
+    try:
+        capacity_str = product.get('production_capacity', '0')
+        # Extract number from capacity string (e.g., "10000 units/month")
+        capacity_num = int(''.join(filter(str.isdigit, capacity_str)))
+        if capacity_num > 0:
+            capacity_match = capacity_num >= requirement.get('quantity', 0)
+    except:
+        pass
+    
+    # Incoterm match
+    incoterm_match = True
+    req_incoterm = requirement.get('shipping_terms', '').upper()
+    if req_incoterm:
+        supported_incoterms = [i.upper() for i in product.get('supported_incoterms', [])]
+        if supported_incoterms:
+            incoterm_match = any(inco in req_incoterm for inco in supported_incoterms)
+    
+    # Calculate match score (0-100)
+    score = 0
+    if category_match:
+        score += 40  # Category is most important
+    if material_match:
+        score += 15
+    if certification_match:
+        score += 15
+    if moq_match:
+        score += 10
+    if capacity_match:
+        score += 10
+    if incoterm_match:
+        score += 10
+    
+    return MatchIndicator(
+        category_match=category_match,
+        material_match=material_match,
+        certification_match=certification_match,
+        moq_match=moq_match,
+        capacity_match=capacity_match,
+        incoterm_match=incoterm_match,
+        match_score=score
+    )
 
 
 class FileUpload(BaseModel):
@@ -445,6 +535,52 @@ async def get_open_requirements(current_user: dict = Depends(get_current_user)):
     return requirements
 
 
+@api_router.get("/manufacturers/matched-requirements")
+async def get_matched_requirements(current_user: dict = Depends(get_current_user)):
+    """
+    Get requirements matched to manufacturer's products based on category, material, certifications, MOQ, and capacity
+    """
+    profile = await db.manufacturer_profiles.find_one({"user_id": current_user['id']}, {"_id": 0})
+    if not profile:
+        return []
+    
+    # Get manufacturer's products
+    products = await db.products.find({"manufacturer_id": profile['id']}, {"_id": 0}).to_list(1000)
+    if not products:
+        return []
+    
+    # Get all open requirements
+    requirements = await db.requirements.find({"status": "open_for_bidding"}, {"_id": 0}).to_list(1000)
+    
+    # Match requirements with products
+    matched_requirements = []
+    for requirement in requirements:
+        best_match_score = 0
+        best_match_indicator = None
+        
+        # Find the best matching product for this requirement
+        for product in products:
+            match_indicator = calculate_match(product, requirement)
+            
+            # Only include if category matches (mandatory) and score >= 50
+            if match_indicator.category_match and match_indicator.match_score >= 50:
+                if match_indicator.match_score > best_match_score:
+                    best_match_score = match_indicator.match_score
+                    best_match_indicator = match_indicator
+        
+        # Add requirement if a good match was found
+        if best_match_indicator:
+            matched_requirements.append({
+                "requirement": requirement,
+                "match_indicator": best_match_indicator.model_dump()
+            })
+    
+    # Sort by match score (highest first)
+    matched_requirements.sort(key=lambda x: x['match_indicator']['match_score'], reverse=True)
+    
+    return matched_requirements
+
+
 @api_router.post("/manufacturers/bids", response_model=Bid)
 async def create_bid(input: BidInput, current_user: dict = Depends(get_current_user)):
     profile = await db.manufacturer_profiles.find_one({"user_id": current_user['id']}, {"_id": 0})
@@ -622,6 +758,49 @@ async def admin_update_order(order_id: str, update_data: dict, current_user: dic
     return {"message": "Order updated"}
 
 
+@api_router.get("/admin/matching/{requirement_id}")
+async def admin_get_matching_details(requirement_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Admin can view why manufacturers were matched (or not matched) to a requirement
+    """
+    if current_user['role'] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access only")
+    
+    requirement = await db.requirements.find_one({"id": requirement_id}, {"_id": 0})
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    
+    # Get all manufacturer products
+    all_products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    
+    # Get manufacturer profiles to include company names
+    manufacturer_profiles = await db.manufacturer_profiles.find({}, {"_id": 0}).to_list(1000)
+    profile_map = {p['id']: p for p in manufacturer_profiles}
+    
+    # Calculate matching for each manufacturer's products
+    matching_results = []
+    for product in all_products:
+        match_indicator = calculate_match(product, requirement)
+        manufacturer_profile = profile_map.get(product['manufacturer_id'])
+        
+        matching_results.append({
+            "manufacturer_id": product['manufacturer_id'],
+            "manufacturer_name": manufacturer_profile.get('company_name', 'Unknown') if manufacturer_profile else 'Unknown',
+            "product_name": product['name'],
+            "product_category": product.get('category', 'N/A'),
+            "match_indicator": match_indicator.model_dump(),
+            "is_matched": match_indicator.category_match and match_indicator.match_score >= 50
+        })
+    
+    # Sort by match score
+    matching_results.sort(key=lambda x: x['match_indicator']['match_score'], reverse=True)
+    
+    return {
+        "requirement": requirement,
+        "matching_results": matching_results
+    }
+
+
 # ========== FILE UPLOAD ROUTES ==========
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -678,6 +857,7 @@ class TenderAssistantInput(BaseModel):
 class TenderAssistantOutput(BaseModel):
     product_name: str
     product_description: str
+    category: str
     material: str
     packaging_requirements: str
     certifications: str
@@ -713,6 +893,7 @@ Please generate a complete, professional tender specification in JSON format wit
 {{
   "product_name": "Clear product name",
   "product_description": "Detailed 2-3 sentence description",
+  "category": "Product category (e.g., Textiles, Electronics, Machinery, Food Products, Chemicals)",
   "material": "Primary materials/composition",
   "packaging_requirements": "Standard packaging specifications",
   "certifications": "Relevant industry certifications (e.g., ISO, CE, FDA)",
@@ -743,6 +924,7 @@ Respond ONLY with valid JSON, no additional text."""
         return TenderAssistantOutput(
             product_name=input.simple_requirement,
             product_description=f"Professional procurement requirement for {input.simple_requirement}",
+            category="General",
             material="To be specified",
             packaging_requirements="Standard export packaging",
             certifications="Industry standard certifications required",

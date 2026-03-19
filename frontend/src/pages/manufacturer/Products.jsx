@@ -13,13 +13,17 @@ const ManufacturerProducts = () => {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
+    category: '',
     description: '',
+    material: '',
     specifications: '',
     quantity: 0,
     quality: '',
     certifications: '',
     packaging: '',
     production_capacity: '',
+    export_experience: true,
+    supported_incoterms: '',
     export_countries: '',
     moq: 0,
   });
@@ -49,6 +53,7 @@ const ManufacturerProducts = () => {
       const payload = {
         ...formData,
         certifications: formData.certifications.split(',').map(c => c.trim()),
+        supported_incoterms: formData.supported_incoterms.split(',').map(i => i.trim()),
         export_countries: formData.export_countries.split(',').map(c => c.trim()),
       };
       await axios.post('/manufacturers/products', payload);
@@ -56,13 +61,17 @@ const ManufacturerProducts = () => {
       setOpen(false);
       setFormData({
         name: '',
+        category: '',
         description: '',
+        material: '',
         specifications: '',
         quantity: 0,
         quality: '',
         certifications: '',
         packaging: '',
         production_capacity: '',
+        export_experience: true,
+        supported_incoterms: '',
         export_countries: '',
         moq: 0,
       });
@@ -108,6 +117,28 @@ const ManufacturerProducts = () => {
                     required
                   />
                 </div>
+                <div>
+                  <Label htmlFor="category" className="uppercase text-xs font-bold tracking-wider">Product Category</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="h-10 rounded-none mt-1"
+                    placeholder="e.g., Textiles, Electronics, Machinery"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="material" className="uppercase text-xs font-bold tracking-wider">Material</Label>
+                  <Input
+                    id="material"
+                    value={formData.material}
+                    onChange={(e) => setFormData({ ...formData, material: e.target.value })}
+                    className="h-10 rounded-none mt-1"
+                    placeholder="e.g., 100% Cotton, Stainless Steel"
+                    required
+                  />
+                </div>
                 <div className="col-span-2">
                   <Label htmlFor="description" className="uppercase text-xs font-bold tracking-wider">Description</Label>
                   <Textarea
@@ -140,7 +171,7 @@ const ManufacturerProducts = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="moq" className="uppercase text-xs font-bold tracking-wider">MOQ</Label>
+                  <Label htmlFor="moq" className="uppercase text-xs font-bold tracking-wider">MOQ (Minimum Order Quantity)</Label>
                   <Input
                     id="moq"
                     type="number"
@@ -172,23 +203,35 @@ const ManufacturerProducts = () => {
                   />
                 </div>
                 <div className="col-span-2">
-                  <Label htmlFor="packaging" className="uppercase text-xs font-bold tracking-wider">Packaging</Label>
+                  <Label htmlFor="packaging" className="uppercase text-xs font-bold tracking-wider">Packaging Capability</Label>
                   <Input
                     id="packaging"
                     value={formData.packaging}
                     onChange={(e) => setFormData({ ...formData, packaging: e.target.value })}
                     className="h-10 rounded-none mt-1"
+                    placeholder="e.g., Bulk, Retail packs, Custom packaging"
                     required
                   />
                 </div>
                 <div className="col-span-2">
-                  <Label htmlFor="production_capacity" className="uppercase text-xs font-bold tracking-wider">Production Capacity</Label>
+                  <Label htmlFor="production_capacity" className="uppercase text-xs font-bold tracking-wider">Production Capacity (per month)</Label>
                   <Input
                     id="production_capacity"
                     value={formData.production_capacity}
                     onChange={(e) => setFormData({ ...formData, production_capacity: e.target.value })}
                     className="h-10 rounded-none mt-1"
                     placeholder="10000 units/month"
+                    required
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label htmlFor="supported_incoterms" className="uppercase text-xs font-bold tracking-wider">Supported Incoterms (comma-separated)</Label>
+                  <Input
+                    id="supported_incoterms"
+                    value={formData.supported_incoterms}
+                    onChange={(e) => setFormData({ ...formData, supported_incoterms: e.target.value })}
+                    className="h-10 rounded-none mt-1"
+                    placeholder="FOB, CIF, CNF, EXW"
                     required
                   />
                 </div>

@@ -16,6 +16,8 @@ const ImporterRequirements = () => {
   const [selectedReq, setSelectedReq] = useState(null);
   const [quotations, setQuotations] = useState([]);
   const [formData, setFormData] = useState({
+    category: '',
+    material: '',
     hsn_code: '',
     quantity: 0,
     quality_requirements: '',
@@ -112,6 +114,8 @@ const ImporterRequirements = () => {
       
       // Populate form with AI-generated data
       setFormData({
+        category: aiData.category,
+        material: aiData.material,
         hsn_code: aiData.hsn_code,
         quantity: parseInt(aiData.quantity) || 0,
         quality_requirements: aiData.quality_requirements,
@@ -120,7 +124,7 @@ const ImporterRequirements = () => {
         shipping_terms: aiData.shipping_terms,
         certification_requirements: aiData.certifications,
         payment_details: 'As per agreement',
-        additional_info: `Product: ${aiData.product_name}\n\nDescription: ${aiData.product_description}\n\nMaterial: ${aiData.material}\n\nPackaging: ${aiData.packaging_requirements}\n\nQuality Standards: ${aiData.quality_standards}\n\nSuggested Timeline: ${aiData.suggested_delivery_timeline}`,
+        additional_info: `Product: ${aiData.product_name}\n\nDescription: ${aiData.product_description}\n\nPackaging: ${aiData.packaging_requirements}\n\nQuality Standards: ${aiData.quality_standards}\n\nSuggested Timeline: ${aiData.suggested_delivery_timeline}`,
       });
       
       setShowAiAssistant(false);
@@ -224,6 +228,27 @@ const ImporterRequirements = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="category" className="uppercase text-xs font-bold tracking-wider">Product Category</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="h-10 rounded-none mt-1"
+                    placeholder="e.g., Textiles, Electronics"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="material" className="uppercase text-xs font-bold tracking-wider">Material (Optional)</Label>
+                  <Input
+                    id="material"
+                    value={formData.material}
+                    onChange={(e) => setFormData({ ...formData, material: e.target.value })}
+                    className="h-10 rounded-none mt-1"
+                    placeholder="e.g., Cotton, Steel"
+                  />
+                </div>
                 <div>
                   <Label htmlFor="hsn_code" className="uppercase text-xs font-bold tracking-wider">HSN Code</Label>
                   <Input
